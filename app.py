@@ -20,6 +20,10 @@ PROVIDERS = {
     "Grok": {
         "env": "XAI_API_KEY",
         "api_url": "https://api.x.ai/v1/chat/completions"
+    },
+    "HuggingFace": {
+        "env": "HF_TOKEN",
+        "api_url": "https://router.huggingface.co"
     }
 }
 
@@ -34,7 +38,8 @@ def load_config():
             'OpenAI': 'gpt-4.1-mini',
             'Gemini': 'gemini-2.0-flash',
             'Anthropic': 'claude-3-7-sonnet-20250219',
-            'Grok': 'grok-3-latest'
+            'Grok': 'grok-3-latest',
+            'HuggingFace': 'meta-llama/Meta-Llama-3-8B-Instruct'
         }
     }
 
@@ -88,11 +93,21 @@ with st.sidebar.expander("⚙️ Settings", expanded=False):
         # Grok does not have a public list endpoint; hardcode known models
         return ["grok-3-latest"]
 
+    def get_hf_models(hf_token):
+        try:
+            headers = {"Authorization": f"Bearer {hf_token}"} if hf_token else {}
+            response = requests.get("https://huggingface.co/api/models?filter=text-generation&sort=downloads&direction=-1&limit=20", headers=headers)
+            response.raise_for_status()
+            return [m['modelId'] for m in response.json()]
+        except Exception as e:
+            return ["meta-llama/Meta-Llama-3-8B-Instruct"]
+
     # Get API keys
     openai_key = os.getenv("OPENAI_API_KEY")
     gemini_key = os.getenv("GEMINI_API_KEY")
     anthropic_key = os.getenv("ANTHROPIC_API_KEY")
     grok_key = os.getenv("XAI_API_KEY")
+    hf_token = os.getenv("HF_TOKEN")
 
     # Model selection dropdowns
     config = st.session_state['config']
@@ -102,11 +117,13 @@ with st.sidebar.expander("⚙️ Settings", expanded=False):
     gemini_models = get_gemini_models(gemini_key) if gemini_key else ["gemini-2.0-flash"]
     anthropic_models = get_anthropic_models(anthropic_key) if anthropic_key else ["claude-3-7-sonnet-20250219"]
     grok_models = get_grok_models(grok_key)
+    hf_models = get_hf_models(hf_token) if hf_token else ["meta-llama/Meta-Llama-3-8B-Instruct"]
 
     selected_models['OpenAI'] = st.selectbox("OpenAI Model", openai_models, index=openai_models.index(selected_models['OpenAI']) if selected_models['OpenAI'] in openai_models else 0)
     selected_models['Gemini'] = st.selectbox("Gemini Model", gemini_models, index=gemini_models.index(selected_models['Gemini']) if selected_models['Gemini'] in gemini_models else 0)
     selected_models['Anthropic'] = st.selectbox("Anthropic Model", anthropic_models, index=anthropic_models.index(selected_models['Anthropic']) if selected_models['Anthropic'] in anthropic_models else 0)
     selected_models['Grok'] = st.selectbox("Grok Model", grok_models, index=grok_models.index(selected_models['Grok']) if selected_models['Grok'] in grok_models else 0)
+    selected_models['HuggingFace'] = st.selectbox("Hugging Face Model", hf_models, index=hf_models.index(selected_models['HuggingFace']) if selected_models['HuggingFace'] in hf_models else 0)
 
     if st.button("Save Model Settings"):
         config['selected_models'] = selected_models
@@ -202,6 +219,30 @@ def call_grok(api_key, prompt, system_message="You are a helpful assistant."):
     except Exception as e:
         return f"Grok Error: {str(e)}\nResponse: {getattr(e, 'response', None)}"
 
+def call_huggingface(api_key, prompt, model_id, system_message="You are a helpful assistant."):
+    try:
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        # We'll use Together as the default provider for OpenAI-style chat completions
+        url = f"https://router.huggingface.co/together/v1/chat/completions"
+        data = {
+            "model": model_id,
+            "messages": [
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": prompt}
+            ],
+            "max_tokens": 512,
+            "temperature": 0.7,
+            "stream": False
+        }
+        response = requests.post(url, headers=headers, json=data)
+        response.raise_for_status()
+        return response.json()['choices'][0]['message']['content']
+    except Exception as e:
+        return f"Hugging Face Error: {str(e)}\nResponse: {getattr(e, 'response', None)}"
+
 if prompt:
     api_key = os.getenv(PROVIDERS[provider]["env"])
     if not api_key:
@@ -216,6 +257,9 @@ if prompt:
             response = call_anthropic(api_key, prompt)
         elif provider == "Grok":
             response = call_grok(api_key, prompt)
+        elif provider == "HuggingFace":
+            hf_model = st.session_state['config']['selected_models']['HuggingFace']
+            response = call_huggingface(api_key, prompt, hf_model)
         else:
             response = "Provider not supported."
         st.session_state['messages'].append({"role": "assistant", "content": response, "provider": provider})
