@@ -10,7 +10,7 @@ PROVIDERS = {
     },
     "Gemini": {
         "env": "GEMINI_API_KEY",
-        "api_url": "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash-preview-04-17:generateContent"
+        "api_url": "https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent"
     },
     "Anthropic": {
         "env": "ANTHROPIC_API_KEY",
@@ -84,7 +84,7 @@ def call_anthropic(api_key, prompt):
             "content-type": "application/json"
         }
         data = {
-            "model": "claude-3-opus-20240229",
+            "model": "claude-3-7-sonnet-20250219",
             "max_tokens": 1024,
             "messages": [{"role": "user", "content": prompt}]
         }
