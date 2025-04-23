@@ -39,7 +39,8 @@ def load_config():
             'Gemini': 'gemini-2.0-flash',
             'Anthropic': 'claude-3-7-sonnet-20250219',
             'Grok': 'grok-3-latest',
-            'HuggingFace': 'meta-llama/Meta-Llama-3-8B-Instruct'
+            'HuggingFace': 'meta-llama/Meta-Llama-3-8B-Instruct',
+            'HuggingFaceProvider': 'hf-inference'
         }
     }
 
@@ -96,11 +97,29 @@ with st.sidebar.expander("⚙️ Settings", expanded=False):
     def get_hf_models(hf_token):
         try:
             headers = {"Authorization": f"Bearer {hf_token}"} if hf_token else {}
-            response = requests.get("https://huggingface.co/api/models?filter=text-generation&sort=downloads&direction=-1&limit=20", headers=headers)
+            response = requests.get("https://huggingface.co/api/models?filter=text-generation&sort=downloads&direction=-1&limit=50&full=true", headers=headers)
             response.raise_for_status()
-            return [m['modelId'] for m in response.json()]
+            # Use model['id'] for the model id (not modelId)
+            return [m['id'] for m in response.json() if m.get('id') and '/' in m['id']]
         except Exception as e:
             return ["meta-llama/Meta-Llama-3-8B-Instruct"]
+
+    def get_hf_provider_model_pairs(hf_token):
+        try:
+            headers = {"Authorization": f"Bearer {hf_token}"} if hf_token else {}
+            resp = requests.get("https://huggingface.co/api/models?inference_provider=all&pipeline_tag=text-generation&sort=downloads&direction=-1&limit=50&full=true", headers=headers)
+            resp.raise_for_status()
+            models = resp.json()
+            provider_model_pairs = []
+            for m in models:
+                model_id = m.get('id')
+                # Use 'inference_providers' field if present
+                providers = m.get('inference_providers', [])
+                for provider_name in providers:
+                    provider_model_pairs.append((provider_name, model_id))
+            return provider_model_pairs if provider_model_pairs else [("hf-inference", "meta-llama/Meta-Llama-3-8B-Instruct")]
+        except Exception as e:
+            return [("hf-inference", "meta-llama/Meta-Llama-3-8B-Instruct")]
 
     # Get API keys
     openai_key = os.getenv("OPENAI_API_KEY")
@@ -118,12 +137,18 @@ with st.sidebar.expander("⚙️ Settings", expanded=False):
     anthropic_models = get_anthropic_models(anthropic_key) if anthropic_key else ["claude-3-7-sonnet-20250219"]
     grok_models = get_grok_models(grok_key)
     hf_models = get_hf_models(hf_token) if hf_token else ["meta-llama/Meta-Llama-3-8B-Instruct"]
+    hf_provider_model_pairs = get_hf_provider_model_pairs(hf_token) if hf_token else [("hf-inference", "meta-llama/Meta-Llama-3-8B-Instruct")]
+    hf_combo_labels = [f"{provider} / {model}" for provider, model in hf_provider_model_pairs]
+    default_combo = f"{selected_models.get('HuggingFaceProvider', 'hf-inference')} / {selected_models.get('HuggingFace', 'meta-llama/Meta-Llama-3-8B-Instruct')}"
+    selected_combo = st.selectbox("Hugging Face Provider/Model", hf_combo_labels, index=hf_combo_labels.index(default_combo) if default_combo in hf_combo_labels else 0)
+    selected_provider, selected_model = hf_provider_model_pairs[hf_combo_labels.index(selected_combo)]
+    selected_models['HuggingFaceProvider'] = selected_provider
+    selected_models['HuggingFace'] = selected_model
 
     selected_models['OpenAI'] = st.selectbox("OpenAI Model", openai_models, index=openai_models.index(selected_models['OpenAI']) if selected_models['OpenAI'] in openai_models else 0)
     selected_models['Gemini'] = st.selectbox("Gemini Model", gemini_models, index=gemini_models.index(selected_models['Gemini']) if selected_models['Gemini'] in gemini_models else 0)
     selected_models['Anthropic'] = st.selectbox("Anthropic Model", anthropic_models, index=anthropic_models.index(selected_models['Anthropic']) if selected_models['Anthropic'] in anthropic_models else 0)
     selected_models['Grok'] = st.selectbox("Grok Model", grok_models, index=grok_models.index(selected_models['Grok']) if selected_models['Grok'] in grok_models else 0)
-    selected_models['HuggingFace'] = st.selectbox("Hugging Face Model", hf_models, index=hf_models.index(selected_models['HuggingFace']) if selected_models['HuggingFace'] in hf_models else 0)
 
     if st.button("Save Model Settings"):
         config['selected_models'] = selected_models
@@ -219,14 +244,14 @@ def call_grok(api_key, prompt, system_message="You are a helpful assistant."):
     except Exception as e:
         return f"Grok Error: {str(e)}\nResponse: {getattr(e, 'response', None)}"
 
-def call_huggingface(api_key, prompt, model_id, system_message="You are a helpful assistant."):
+def call_huggingface(api_key, prompt, provider, model_id, system_message="You are a helpful assistant."):
     try:
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
         }
-        # We'll use Together as the default provider for OpenAI-style chat completions
-        url = f"https://router.huggingface.co/together/v1/chat/completions"
+        # Use the selected provider/model in the router endpoint
+        url = f"https://router.huggingface.co/{provider}/v1/chat/completions"
         data = {
             "model": model_id,
             "messages": [
@@ -259,7 +284,8 @@ if prompt:
             response = call_grok(api_key, prompt)
         elif provider == "HuggingFace":
             hf_model = st.session_state['config']['selected_models']['HuggingFace']
-            response = call_huggingface(api_key, prompt, hf_model)
+            hf_provider = st.session_state['config']['selected_models']['HuggingFaceProvider']
+            response = call_huggingface(api_key, prompt, hf_provider, hf_model)
         else:
             response = "Provider not supported."
         st.session_state['messages'].append({"role": "assistant", "content": response, "provider": provider})
