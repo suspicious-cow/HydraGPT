@@ -10,7 +10,7 @@ PROVIDERS = {
     },
     "Gemini": {
         "env": "GEMINI_API_KEY",
-        "api_url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
+        "api_url": "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-pro:generateContent"
     },
     "Anthropic": {
         "env": "ANTHROPIC_API_KEY",
@@ -49,7 +49,7 @@ def call_openai(api_key, prompt):
             "Content-Type": "application/json"
         }
         data = {
-            "model": "gpt-3.5-turbo",
+            "model": "gpt-4.1",
             "messages": [{"role": "user", "content": prompt}]
         }
         response = requests.post(PROVIDERS["OpenAI"]["api_url"], headers=headers, json=data)
@@ -70,10 +70,11 @@ def call_gemini(api_key, prompt):
             ]
         }
         response = requests.post(url, json=data)
-        response.raise_for_status()
+        if response.status_code != 200:
+            return f"Gemini Error: {response.status_code} {response.reason}\nResponse: {response.text}"
         return response.json()['candidates'][0]['content']['parts'][0]['text']
     except Exception as e:
-        return f"Gemini Error: {str(e)}\nResponse: {getattr(e, 'response', None)}"
+        return f"Gemini Exception: {str(e)}"
 
 def call_anthropic(api_key, prompt):
     try:
