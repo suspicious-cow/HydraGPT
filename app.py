@@ -28,9 +28,6 @@ st.title("HydraGPT Chat")
 # Sidebar for provider selection
 provider = st.sidebar.selectbox("Select Provider", list(PROVIDERS.keys()))
 
-# Prompt input (chat style)
-prompt = st.chat_input("Enter your prompt:")
-
 # Store chat history in session state
 if 'messages' not in st.session_state:
     st.session_state['messages'] = []
@@ -41,6 +38,9 @@ for msg in st.session_state['messages']:
         st.markdown(f"**You:** {msg['content']}")
     else:
         st.markdown(f"**{provider}:** {msg['content']}")
+
+# Always show chat input at the end
+prompt = st.chat_input("Enter your prompt:")
 
 def call_openai(api_key, prompt):
     try:
