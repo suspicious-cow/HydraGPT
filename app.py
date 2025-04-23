@@ -1,6 +1,7 @@
 import os
 import streamlit as st
 import requests
+import json
 
 # Provider configuration
 PROVIDERS = {
@@ -22,11 +23,96 @@ PROVIDERS = {
     }
 }
 
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), "hydragpt_config.json")
+
+def load_config():
+    if os.path.exists(CONFIG_PATH):
+        with open(CONFIG_PATH, "r") as f:
+            return json.load(f)
+    return {
+        'selected_models': {
+            'OpenAI': 'gpt-4.1-mini',
+            'Gemini': 'gemini-2.0-flash',
+            'Anthropic': 'claude-3-7-sonnet-20250219',
+            'Grok': 'grok-3-latest'
+        }
+    }
+
+def save_config(config):
+    with open(CONFIG_PATH, "w") as f:
+        json.dump(config, f)
+
+# Load config at startup
+if 'config' not in st.session_state:
+    st.session_state['config'] = load_config()
+
 st.set_page_config(page_title="HydraGPT Chat", page_icon="🤖")
 st.title("HydraGPT Chat")
 
 # Sidebar for provider selection
 provider = st.sidebar.selectbox("Select Provider", list(PROVIDERS.keys()))
+
+# --- Settings Section ---
+with st.sidebar.expander("⚙️ Settings", expanded=False):
+    st.markdown("### Model Selection")
+    # Fetch and cache models per provider
+    def get_openai_models(api_key):
+        try:
+            headers = {"Authorization": f"Bearer {api_key}"}
+            response = requests.get("https://api.openai.com/v1/models", headers=headers)
+            response.raise_for_status()
+            # Filter for chat/completions models
+            return [m['id'] for m in response.json()['data'] if 'gpt' in m['id']]
+        except Exception as e:
+            return ["gpt-4.1-mini"]
+
+    def get_gemini_models(api_key):
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1/models?key={api_key}"
+            response = requests.get(url)
+            response.raise_for_status()
+            return [m['name'].split('/')[-1] for m in response.json().get('models', []) if 'generateContent' in m.get('supportedGenerationMethods', [])]
+        except Exception as e:
+            return ["gemini-2.0-flash"]
+
+    def get_anthropic_models(api_key):
+        try:
+            headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
+            response = requests.get("https://api.anthropic.com/v1/models", headers=headers)
+            response.raise_for_status()
+            return [m['id'] for m in response.json().get('data', [])]
+        except Exception as e:
+            return ["claude-3-7-sonnet-20250219"]
+
+    def get_grok_models(api_key):
+        # Grok does not have a public list endpoint; hardcode known models
+        return ["grok-3-latest"]
+
+    # Get API keys
+    openai_key = os.getenv("OPENAI_API_KEY")
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+    grok_key = os.getenv("XAI_API_KEY")
+
+    # Model selection dropdowns
+    config = st.session_state['config']
+    selected_models = config['selected_models']
+
+    openai_models = get_openai_models(openai_key) if openai_key else ["gpt-4.1-mini"]
+    gemini_models = get_gemini_models(gemini_key) if gemini_key else ["gemini-2.0-flash"]
+    anthropic_models = get_anthropic_models(anthropic_key) if anthropic_key else ["claude-3-7-sonnet-20250219"]
+    grok_models = get_grok_models(grok_key)
+
+    selected_models['OpenAI'] = st.selectbox("OpenAI Model", openai_models, index=openai_models.index(selected_models['OpenAI']) if selected_models['OpenAI'] in openai_models else 0)
+    selected_models['Gemini'] = st.selectbox("Gemini Model", gemini_models, index=gemini_models.index(selected_models['Gemini']) if selected_models['Gemini'] in gemini_models else 0)
+    selected_models['Anthropic'] = st.selectbox("Anthropic Model", anthropic_models, index=anthropic_models.index(selected_models['Anthropic']) if selected_models['Anthropic'] in anthropic_models else 0)
+    selected_models['Grok'] = st.selectbox("Grok Model", grok_models, index=grok_models.index(selected_models['Grok']) if selected_models['Grok'] in grok_models else 0)
+
+    if st.button("Save Model Settings"):
+        config['selected_models'] = selected_models
+        save_config(config)
+        st.success("Model settings saved!")
+        st.session_state['config'] = config
 
 # Store chat history in session state
 if 'messages' not in st.session_state:
@@ -49,7 +135,7 @@ def call_openai(api_key, prompt):
             "Content-Type": "application/json"
         }
         data = {
-            "model": "gpt-4.1-mini",
+            "model": st.session_state['config']['selected_models']['OpenAI'],
             "messages": [{"role": "user", "content": prompt}]
         }
         response = requests.post(PROVIDERS["OpenAI"]["api_url"], headers=headers, json=data)
@@ -60,7 +146,7 @@ def call_openai(api_key, prompt):
 
 def call_gemini(api_key, prompt):
     try:
-        url = f"{PROVIDERS['Gemini']['api_url']}?key={api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1/models/{st.session_state['config']['selected_models']['Gemini']}:generateContent?key={api_key}"
         data = {
             "contents": [
                 {
@@ -84,7 +170,7 @@ def call_anthropic(api_key, prompt):
             "content-type": "application/json"
         }
         data = {
-            "model": "claude-3-7-sonnet-20250219",
+            "model": st.session_state['config']['selected_models']['Anthropic'],
             "max_tokens": 1024,
             "messages": [{"role": "user", "content": prompt}]
         }
@@ -94,15 +180,20 @@ def call_anthropic(api_key, prompt):
     except Exception as e:
         return f"Anthropic Error: {str(e)}\nResponse: {getattr(e, 'response', None)}"
 
-def call_grok(api_key, prompt):
+def call_grok(api_key, prompt, system_message="You are a helpful assistant."):
     try:
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
         }
         data = {
-            "model": "grok-1",
-            "messages": [{"role": "user", "content": prompt}]
+            "model": st.session_state['config']['selected_models']['Grok'],
+            "messages": [
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": prompt}
+            ],
+            "stream": False,
+            "temperature": 0
         }
         response = requests.post(PROVIDERS["Grok"]["api_url"], headers=headers, json=data)
         response.raise_for_status()
@@ -123,6 +214,7 @@ if prompt:
         elif provider == "Anthropic":
             response = call_anthropic(api_key, prompt)
         elif provider == "Grok":
+            # You can customize the system message here if desired
             response = call_grok(api_key, prompt)
         else:
             response = "Provider not supported."
