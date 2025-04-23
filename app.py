@@ -10,7 +10,7 @@ PROVIDERS = {
     },
     "Gemini": {
         "env": "GEMINI_API_KEY",
-        "api_url": "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-pro:generateContent"
+        "api_url": "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash-preview-04-17:generateContent"
     },
     "Anthropic": {
         "env": "ANTHROPIC_API_KEY",
@@ -49,7 +49,7 @@ def call_openai(api_key, prompt):
             "Content-Type": "application/json"
         }
         data = {
-            "model": "gpt-4.1",
+            "model": "gpt-4.1-mini",
             "messages": [{"role": "user", "content": prompt}]
         }
         response = requests.post(PROVIDERS["OpenAI"]["api_url"], headers=headers, json=data)
