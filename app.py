@@ -28,8 +28,8 @@ st.title("HydraGPT Chat")
 # Sidebar for provider selection
 provider = st.sidebar.selectbox("Select Provider", list(PROVIDERS.keys()))
 
-# Prompt input
-prompt = st.text_input("Enter your prompt:")
+# Prompt input (chat style)
+prompt = st.chat_input("Enter your prompt:")
 
 # Store chat history in session state
 if 'messages' not in st.session_state:
@@ -109,7 +109,7 @@ def call_grok(api_key, prompt):
     except Exception as e:
         return f"Grok Error: {str(e)}\nResponse: {getattr(e, 'response', None)}"
 
-if st.button("Send"):
+if prompt:
     api_key = os.getenv(PROVIDERS[provider]["env"])
     if not api_key:
         st.error(f"API key for {provider} not found. Please set the {PROVIDERS[provider]['env']} environment variable.")
