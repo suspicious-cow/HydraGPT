@@ -123,7 +123,8 @@ for msg in st.session_state['messages']:
     if msg['role'] == 'user':
         st.markdown(f"**You:** {msg['content']}")
     else:
-        st.markdown(f"**{provider}:** {msg['content']}")
+        provider_label = msg.get('provider', provider)
+        st.markdown(f"**{provider_label}:** {msg['content']}")
 
 # Always show chat input at the end
 prompt = st.chat_input("Enter your prompt:")
@@ -214,9 +215,8 @@ if prompt:
         elif provider == "Anthropic":
             response = call_anthropic(api_key, prompt)
         elif provider == "Grok":
-            # You can customize the system message here if desired
             response = call_grok(api_key, prompt)
         else:
             response = "Provider not supported."
-        st.session_state['messages'].append({"role": "assistant", "content": response})
+        st.session_state['messages'].append({"role": "assistant", "content": response, "provider": provider})
         st.rerun()
