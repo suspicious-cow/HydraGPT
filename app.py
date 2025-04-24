@@ -3,6 +3,7 @@ import streamlit as st
 import requests
 import json
 import threading
+import time
 from datetime import datetime, timedelta
 
 # Provider configuration
@@ -162,6 +163,8 @@ with st.sidebar.expander("⚙️ Settings", expanded=False):
     grok_models = get_grok_models(grok_key)
     hf_models = get_hf_models(hf_token) if hf_token else ["meta-llama/Meta-Llama-3-8B-Instruct"]
     hf_provider_model_pairs = get_hf_provider_model_pairs(hf_token) if hf_token else [("hf-inference", "meta-llama/Meta-Llama-3-8B-Instruct")]
+    # Sort alphabetically by provider
+    hf_provider_model_pairs = sorted(hf_provider_model_pairs, key=lambda x: x[0])
     hf_combo_labels = [f"{provider} / {model}" for provider, model in hf_provider_model_pairs]
     default_combo = f"{selected_models.get('HuggingFaceProvider', 'hf-inference')} / {selected_models.get('HuggingFace', 'meta-llama/Meta-Llama-3-8B-Instruct')}"
     selected_combo = st.selectbox("Hugging Face Provider/Model", hf_combo_labels, index=hf_combo_labels.index(default_combo) if default_combo in hf_combo_labels else 0)
