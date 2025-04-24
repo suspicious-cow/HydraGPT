@@ -2,6 +2,8 @@ import os
 import streamlit as st
 import requests
 import json
+import threading
+from datetime import datetime, timedelta
 
 # Provider configuration
 PROVIDERS = {
@@ -28,6 +30,8 @@ PROVIDERS = {
 }
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "hydragpt_config.json")
+HF_CACHE_PATH = os.path.join(os.path.dirname(__file__), "hf_provider_model_cache.json")
+HF_CACHE_TTL_HOURS = 24
 
 def load_config():
     if os.path.exists(CONFIG_PATH):
@@ -47,6 +51,37 @@ def load_config():
 def save_config(config):
     with open(CONFIG_PATH, "w") as f:
         json.dump(config, f)
+
+def fetch_and_cache_hf_provider_models():
+    url = "https://huggingface.co/api/models?inference_provider=all&pipeline_tag=text-generation&limit=50"
+    response = requests.get(url)
+    models = response.json()
+    pairs = []
+    for model in models:
+        model_id = model['id']
+        info_url = f"https://huggingface.co/api/models/{model_id}?expand=inferenceProviderMapping"
+        info_resp = requests.get(info_url)
+        mapping = info_resp.json().get('inferenceProviderMapping', {})
+        for provider in mapping.keys():
+            pairs.append({"provider": provider, "model": model_id})
+        time.sleep(0.5)
+    with open(HF_CACHE_PATH, "w") as f:
+        json.dump({"fetched_at": datetime.utcnow().isoformat(), "pairs": pairs}, f)
+
+def load_hf_provider_model_cache():
+    if os.path.exists(HF_CACHE_PATH):
+        with open(HF_CACHE_PATH, "r") as f:
+            data = json.load(f)
+            fetched_at = datetime.fromisoformat(data.get("fetched_at", "1970-01-01T00:00:00"))
+            if datetime.utcnow() - fetched_at < timedelta(hours=HF_CACHE_TTL_HOURS):
+                return data["pairs"]
+    return None
+
+def ensure_hf_provider_model_cache():
+    pairs = load_hf_provider_model_cache()
+    if pairs is None:
+        threading.Thread(target=fetch_and_cache_hf_provider_models, daemon=True).start()
+    return pairs
 
 # Load config at startup
 if 'config' not in st.session_state:
@@ -105,21 +140,10 @@ with st.sidebar.expander("⚙️ Settings", expanded=False):
             return ["meta-llama/Meta-Llama-3-8B-Instruct"]
 
     def get_hf_provider_model_pairs(hf_token):
-        try:
-            headers = {"Authorization": f"Bearer {hf_token}"} if hf_token else {}
-            resp = requests.get("https://huggingface.co/api/models?inference_provider=all&pipeline_tag=text-generation&sort=downloads&direction=-1&limit=50&full=true", headers=headers)
-            resp.raise_for_status()
-            models = resp.json()
-            provider_model_pairs = []
-            for m in models:
-                model_id = m.get('id')
-                # Use 'inference_providers' field if present
-                providers = m.get('inference_providers', [])
-                for provider_name in providers:
-                    provider_model_pairs.append((provider_name, model_id))
-            return provider_model_pairs if provider_model_pairs else [("hf-inference", "meta-llama/Meta-Llama-3-8B-Instruct")]
-        except Exception as e:
-            return [("hf-inference", "meta-llama/Meta-Llama-3-8B-Instruct")]
+        pairs = ensure_hf_provider_model_cache()
+        if pairs:
+            return [(pair["provider"], pair["model"]) for pair in pairs]
+        return [("hf-inference", "meta-llama/Meta-Llama-3-8B-Instruct")]
 
     # Get API keys
     openai_key = os.getenv("OPENAI_API_KEY")
