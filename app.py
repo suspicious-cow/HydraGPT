@@ -51,7 +51,7 @@ def save_config(config):
 if 'config' not in st.session_state:
     st.session_state['config'] = load_config()
 
-st.set_page_config(page_title="HydraGPT Chat", page_icon="🐉")
+st.set_page_config(page_title="HydraGPT", page_icon="🐉")
 st.title("HydraGPT Chat")
 
 # Sidebar for provider selection
