@@ -27,13 +27,6 @@ PROVIDERS = {
 }
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "hydragpt_config.json")
-HF_CACHE_PATH = os.path.join(os.path.dirname(__file__), "hf_provider_model_cache.json")
-HF_CACHE_TTL_HOURS = 24
-
-# List of providers that support chat completions (LLM) per HF docs
-HF_CHAT_PROVIDERS = {
-    "cerebras", "cohere", "fireworks", "hf-inference", "hyperbolic", "nebius", "novita", "sambanova", "together"
-}
 
 def load_config():
     if os.path.exists(CONFIG_PATH):
@@ -51,21 +44,6 @@ def load_config():
 def save_config(config):
     with open(CONFIG_PATH, "w") as f:
         json.dump(config, f)
-
-def load_hf_provider_model_cache():
-    if os.path.exists(HF_CACHE_PATH):
-        with open(HF_CACHE_PATH, "r") as f:
-            data = json.load(f)
-            fetched_at = datetime.fromisoformat(data.get("fetched_at", "1970-01-01T00:00:00"))
-            if datetime.utcnow() - fetched_at < timedelta(hours=HF_CACHE_TTL_HOURS):
-                return data["pairs"]
-    return None
-
-def ensure_hf_provider_model_cache():
-    pairs = load_hf_provider_model_cache()
-    if pairs is None:
-        threading.Thread(target=fetch_and_cache_hf_provider_models, daemon=True).start()
-    return pairs
 
 # Load config at startup
 if 'config' not in st.session_state:
