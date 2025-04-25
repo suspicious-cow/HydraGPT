@@ -5,6 +5,8 @@ import json
 import threading
 import time
 from datetime import datetime, timedelta
+import warnings
+warnings.filterwarnings("ignore")
 
 # Provider configuration
 PROVIDERS = {
@@ -49,7 +51,7 @@ def save_config(config):
 if 'config' not in st.session_state:
     st.session_state['config'] = load_config()
 
-st.set_page_config(page_title="HydraGPT Chat", page_icon="🤖")
+st.set_page_config(page_title="HydraGPT Chat", page_icon="🐉")
 st.title("HydraGPT Chat")
 
 # Sidebar for provider selection
@@ -223,3 +225,5 @@ if prompt:
             response = "Provider not supported."
         st.session_state['messages'].append({"role": "assistant", "content": response, "provider": provider})
         st.rerun()
+
+st.sidebar.image("hydra_heads.png", use_container_width=True, caption=None)
