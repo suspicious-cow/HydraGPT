@@ -54,9 +54,6 @@ if 'config' not in st.session_state:
 st.set_page_config(page_title="HydraGPT", page_icon="🐉")
 st.title("HydraGPT Chat")
 
-# Sidebar for provider selection
-provider = st.sidebar.selectbox("Select Provider", list(PROVIDERS.keys()))
-
 # --- Settings Section ---
 with st.sidebar.expander("⚙️ Settings", expanded=False):
     st.markdown("### Model Selection")
@@ -131,8 +128,42 @@ for msg in st.session_state['messages']:
         provider_label = msg.get('provider', provider)
         st.markdown(f"**{provider_label}:** {msg['content']}")
 
-# Always show chat input at the end
-prompt = st.chat_input("Enter your prompt:")
+# Only call st.chat_input once, and do not repeat it below
+prompt = st.chat_input("Enter your prompt:", key="main_chat_input")
+
+# Provider checkboxes below the prompt input
+selected_providers = []
+st.markdown("<div style='margin-top: 1em; margin-bottom: 0.5em;'><b>Select Providers to Compare:</b></div>", unsafe_allow_html=True)
+cols = st.columns(len(PROVIDERS))
+for idx, prov in enumerate(PROVIDERS.keys()):
+    if cols[idx].checkbox(prov, value=True, key=f"prov_{prov}"):
+        selected_providers.append(prov)
+
+if prompt and selected_providers:
+    responses = {}
+    for prov in selected_providers:
+        api_key = os.getenv(PROVIDERS[prov]["env"])
+        if not api_key:
+            responses[prov] = f"API key for {prov} not found. Please set the {PROVIDERS[prov]['env']} environment variable."
+        else:
+            if prov == "OpenAI":
+                responses[prov] = call_openai(api_key, prompt)
+            elif prov == "Gemini":
+                responses[prov] = call_gemini(api_key, prompt)
+            elif prov == "Anthropic":
+                responses[prov] = call_anthropic(api_key, prompt)
+            elif prov == "Grok":
+                responses[prov] = call_grok(api_key, prompt)
+            else:
+                responses[prov] = "Provider not supported."
+    # Display results side-by-side
+    cols = st.columns(len(selected_providers))
+    for idx, prov in enumerate(selected_providers):
+        with cols[idx]:
+            st.markdown(f"### {prov}")
+            st.write(responses[prov])
+
+st.sidebar.image("hydra_heads.png", use_container_width=True, caption=None)
 
 def call_openai(api_key, prompt):
     try:
@@ -206,24 +237,3 @@ def call_grok(api_key, prompt, system_message="You are a helpful assistant."):
         return response.json()['choices'][0]['message']['content']
     except Exception as e:
         return f"Grok Error: {str(e)}\nResponse: {getattr(e, 'response', None)}"
-
-if prompt:
-    api_key = os.getenv(PROVIDERS[provider]["env"])
-    if not api_key:
-        st.error(f"API key for {provider} not found. Please set the {PROVIDERS[provider]['env']} environment variable.")
-    else:
-        st.session_state['messages'].append({"role": "user", "content": prompt})
-        if provider == "OpenAI":
-            response = call_openai(api_key, prompt)
-        elif provider == "Gemini":
-            response = call_gemini(api_key, prompt)
-        elif provider == "Anthropic":
-            response = call_anthropic(api_key, prompt)
-        elif provider == "Grok":
-            response = call_grok(api_key, prompt)
-        else:
-            response = "Provider not supported."
-        st.session_state['messages'].append({"role": "assistant", "content": response, "provider": provider})
-        st.rerun()
-
-st.sidebar.image("hydra_heads.png", use_container_width=True, caption=None)
